@@ -387,6 +387,6 @@ int main() {
     } else {
         printf("open file error!\n");
     }
-
+    print_delegate("token is [ divider ,$]\n");
     return 0;
 }

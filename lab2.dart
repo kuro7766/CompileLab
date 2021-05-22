@@ -118,15 +118,21 @@ class Token {
   Token(this.type, this.val);
   String type;
   String val;
+  LR0_Element toLr0_Element() {
+    if (this.type == 'digits') return LR0_Element(type, t: true);
+    if (this.type == 'id') return LR0_Element(type, t: true);
+    return LR0_Element(val, t: true);
+  }
+
   @override
-  String toString() => val;
-  int get columnIndexInTable =>
-      readable.searchPosition(LR0_Element(val, t: true));
+  String toString() => '[$type,$val]';
+  int get columnIndexInTable => readable.searchPosition(this.toLr0_Element());
 }
 
 //slr分析表中的 si,rj,goto 的动作
 class Action {
   // 0 si , 1 rj , 2 goto , -1 error
+  // 5 acc
   Action(this.state, {this.action = -1});
   int action;
   int state;
@@ -136,6 +142,8 @@ class Action {
     switch (action) {
       case -1:
         return 'err';
+      case 5:
+        return 'acc';
       case 0:
         prefix = 's';
         break;
@@ -164,7 +172,8 @@ List<LR0> grammar = [
   LR0(left: LR0_Element('S'), right: [
     LR0_Element('id', t: true),
     LR0_Element('=', t: true),
-    LR0_Element('E')
+    LR0_Element('E'),
+    LR0_Element(';', t: true)
   ]),
   LR0(left: LR0_Element('S'), right: [
     LR0_Element('if', t: true),
@@ -189,9 +198,12 @@ List<LR0> grammar = [
     LR0_Element(')', t: true),
     LR0_Element('S')
   ]),
-  LR0(
-      left: LR0_Element('S'),
-      right: [LR0_Element('S'), LR0_Element(';', t: true), LR0_Element('S')]),
+  LR0(left: LR0_Element('S'), right: [
+    LR0_Element('S'),
+    //老师的文法可能不对
+    // LR0_Element(';', t: true),
+    LR0_Element('S')
+  ]),
   LR0(
       left: LR0_Element('C'),
       right: [LR0_Element('E'), LR0_Element('>', t: true), LR0_Element('E')]),
@@ -243,7 +255,7 @@ HashMap<int, List<Map<LR0_Element, int>>> move = HashMap();
 List<List<Action>> table = [];
 
 //收集slr分析表格能读入的action表和goto表
-List<LR0_Element> readable = [];
+List<LR0_Element> readable = [LR0_Element('\$', t: true)];
 
 //实验1 产生的token列表
 List<Token> tokens = [];
@@ -445,8 +457,11 @@ void mainFun() async {
 
       if (readIn.t) {
         // action 表
+
         var hasAction = false;
-        //先判断归约 ri，需要找到当前状态中能归约的项目
+
+        //判断归约 ri，
+        //需要找到当前状态中能归约的项目
         for (var j = 0; j < state.length; j++) {
           var lr0_item_to_reduce = state[j];
           if (!lr0_item_to_reduce.isEnd) continue;
@@ -466,9 +481,13 @@ void mainFun() async {
         }
 
         //已经判断归约，当前字符处理完毕
-        if (hasAction) continue;
+        // if (hasAction) continue;
+        // 是否选择覆盖归约action，也就是 是否移入的优先级比较大
+        // 对应于 S->if(C)S.elseS , S->if(C)S.
+        // S 的follow中包含了 else
+        // 但是读入了else肯定不能归约
 
-        //再判断移入 sj
+        //判断移入 sj
         if (nextState == -1) {
           //默认err
         } else {
@@ -490,17 +509,48 @@ void mainFun() async {
       }
     }
   }
-  printInfo();
 
-  // tokens.forEach((token) {
-  //   var todo = table[currentState][token.columnIndexInTable];
-  //   if (todo.action == -1) return;
-  //   if (todo.action == 0) {
-  //     stateStack.add(todo.state);
-  //   }
-  //   if (todo.action == 1) {}
-  //   if (todo.action == 2) {}
-  // });
+  // print(Token('divider', '\$').columnIndexInTable);
+  table[5][Token('divider', '\$').columnIndexInTable]..action = 5;
+
+  var token_index = 0;
+  while (token_index < tokens.length) {
+    var token = tokens[token_index];
+    var todo = table[currentState][token.columnIndexInTable];
+    if (todo.action == 5) {
+      print('acc');
+      break;
+    }
+    if (todo.action == -1) {
+      // return;
+      print('err');
+    }
+    if (todo.action == 0) {
+      stateStack.add(todo.state);
+      // characterStack.add(readable[token.columnIndexInTable]);
+      // 只有压栈才能光标右移
+      token_index++;
+    }
+    if (todo.action == 1) {
+      var lr0 = grammar[todo.state];
+      for (var i = 0; i < lr0.right.length; i++) {
+        stateStack.removeLast();
+      }
+      var toAdd = lr0.left;
+      var goto = table[currentState][readable.searchPosition(toAdd)];
+      if (goto.action != -1) {
+        stateStack.add(goto.state);
+      } else {
+        //可能需要错误处理
+      }
+
+      //归约，游标并没有向下移动，因为下一次可能继续归约
+    }
+    //action 2 不会是由读token产生的
+
+    print('${token.toLr0_Element()} ${lr0_states[currentState]}');
+  }
+  print(stateStack);
 }
 
 void main() async {
@@ -509,6 +559,14 @@ void main() async {
 
 void printInfo() {
   var index = 0;
+  print('grammar');
+  grammar.forEach((element) {
+    print('$index :　$element');
+    index++;
+  });
+
+  print('states');
+  index = 0;
   lr0_states.forEach((element) {
     print('$index :　$element');
     index++;
