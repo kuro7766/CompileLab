@@ -26,48 +26,26 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-  String toDisplay = 'todisplay';
+  List<String> rt;
   @override
   void initState() {
     super.initState();
     (() async {
-      List<String> l = await lb.mainFun();
-      toDisplay = l.toString();
+      rt = await lb.mainFun();
       setState(() {});
     })();
-  }
-
-  void _incrementCounter() {
-    setState(() {
-      _counter++;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(toDisplay),
+        title: Text('2021春编译原理实验'),
       ),
       body: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: rt?.map((e) => Text(e))?.toList() ?? []),
       ),
     );
   }

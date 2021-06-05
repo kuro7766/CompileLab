@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:io' as io;
 import 'ext.dart';
@@ -158,6 +159,7 @@ class Action {
   }
 }
 
+// 以后考虑代码转换，先手工输入
 List<LR0> grammar = [
   LR0(left: LR0_Element('P'), right: [LR0_Element('D'), LR0_Element('S')]),
   LR0(left: LR0_Element('D'), right: [
@@ -269,8 +271,10 @@ List<int> stateStack = [0];
 // 记录分析栈字符
 List<LR0_Element> characterStack = [];
 
-Future<List<String>> mainFun() async {
-  List<String> results = [];
+Future<List<String>> mainFun(
+    {
+    // 用来发送信息给其他模块、函数调用
+    StreamController streamController}) async {
   await io.Process.run('test1.exe', []);
   String fs = await io.File('out_file.txt').readAsString();
 
@@ -299,7 +303,6 @@ Future<List<String>> mainFun() async {
 
           return;
         } else {
-          //-1 当作当前产生空然后向后取first集合的情况，便于循环
           var index = 0;
           while (index < lr0.right.length) {
             //merge next first set
@@ -392,6 +395,7 @@ Future<List<String>> mainFun() async {
   lr0_states.add((grammar[0].copy).closure());
 
   hasUpdate = true;
+  //上一遍新加入的状态，下次从这里开始
   List<List<LR0>> lastNewStates = [];
   lastNewStates.addAll(lr0_states);
 
@@ -512,12 +516,27 @@ Future<List<String>> mainFun() async {
   }
 
   // print(Token('divider', '\$').columnIndexInTable);
+  // 终止状态，手工录入，初始状态的状态集合遇到终结符
   table[5][Token('divider', '\$').columnIndexInTable]..action = 5;
 
   var token_index = 0;
+  print(1);
   while (token_index < tokens.length) {
     var token = tokens[token_index];
     var todo = table[currentState][token.columnIndexInTable];
+    print({
+      'stack': stateStack,
+      'act': todo.toString(),
+      'left': tokens.sublist(token_index).map((e) => e.val)
+    });
+    streamController?.add({
+      'type': 'stack',
+      'data': {
+        'stack': stateStack,
+        'act': todo.toString(),
+        'left': tokens.sublist(token_index)
+      }
+    });
     if (todo.action == 5) {
       print('acc');
       break;
@@ -550,17 +569,20 @@ Future<List<String>> mainFun() async {
     //action 2 不会是由读token产生的
 
     // print('${token.toLr0_Element()} ${lr0_states[currentState]}');
+
   }
+
+  printInfo(streamController: streamController);
+
   print(stateStack);
-  results.add(stateStack.toString());
-  return results;
+  return [];
 }
 
 void main() async {
   await mainFun();
 }
 
-void printInfo() {
+void printInfo({StreamController streamController}) {
   var index = 0;
   print('grammar');
   grammar.forEach((element) {
@@ -583,6 +605,7 @@ void printInfo() {
   print('readable');
   print(readable);
 
+  streamController?.add({'type': 'table', 'data': table});
   print('table');
   index = 0;
   table.forEach((element) {
@@ -591,4 +614,5 @@ void printInfo() {
   });
   print('tokens');
   print(tokens);
+  streamController?.add({'type': 'tokens', 'data': tokens});
 }
