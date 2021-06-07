@@ -3,8 +3,7 @@ int b;
 int c;
 a=2;
 b=1;
-c=a/b;
-if (a==b)
+if (a>b)
 c=a+b;
 else
 c=a-b;

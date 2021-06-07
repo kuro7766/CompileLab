@@ -61,6 +61,14 @@ extension ListLR0_Element_Ext on List<LR0_Element> {
     }
     return -1;
   }
+
+  LR0_Element reverseIndexAt(int index) {
+    return this[this.length - index];
+  }
+
+  LR0_Element top(int index) {
+    return this.reverseIndexAt(index);
+  }
 }
 
 extension State_Out_Can_Read_Ext on List<Map<LR0_Element, int>> {
@@ -89,6 +97,7 @@ extension List_List_LR0_Ext on List<List<LR0>> {
     return insertable;
   }
 
+// 返回index和是否插入成功的信息
   List<dynamic> addAsSetWithInfo2(List<LR0> state) {
     var i = 0;
     for (; i < this.length; i++) {
@@ -119,4 +128,26 @@ extension First_Follow_SetExt on HashMap<String, Set<String>> {
 extension BoolExt on bool {
   // only set to true
   operator +(bool other) => other ? true : this;
+}
+
+extension CopyExt on List {
+  List get copy {
+    List rt = [];
+    rt.addAll(this);
+    return rt;
+  }
+}
+
+extension StringExt on String {
+  String width(int length) {
+    String rt = this;
+    if (this.length >= length) {
+      return this.substring(0, 3);
+    }
+    int less = length - this.length;
+    for (var i = 0; i < less; i++) {
+      rt = '-' + rt;
+    }
+    return rt;
+  }
 }

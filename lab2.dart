@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io' as io;
 import 'ext.dart';
+import 'lab3.dart';
 //实验2 ， SLR分析法
 
 //单个lr0项，lr0产生式
@@ -9,11 +10,11 @@ import 'ext.dart';
 //项集族 List<List<LR0>>
 //需要记录 . 的位置
 class LR0 {
-  LR0({this.left, this.right, this.dotPosition = 0});
+  LR0({this.left, this.right, this.dotPosition = 0, this.sdtAction});
   LR0_Element left;
   //右侧字符串的序列
   List<LR0_Element> right;
-
+  Function sdtAction;
   //range : [0,right.length]
   int dotPosition = 0;
 
@@ -100,17 +101,22 @@ class LR0 {
 }
 
 class LR0_Element {
-  LR0_Element(
-    this.s, {
-    this.t = false,
-  });
+  LR0_Element(this.s, {this.t = false, this.extra}) {
+    this.extra = this.extra ?? {};
+  }
   //是否终结符
   bool t;
 
   //content
   String s;
+
+  //其他可能的属性
+  Map<String, dynamic> extra;
+
   @override
-  String toString() => s;
+  // debug version
+  String toString() => '${(extra?.keys?.length == 0 ? "" : extra)}$s';
+  // String toString() => '$s';
   LR0_Element get copy => LR0_Element(s, t: t);
   bool equal(LR0_Element other) => other.s == s && other.t == t;
 }
@@ -119,9 +125,15 @@ class Token {
   Token(this.type, this.val);
   String type;
   String val;
+  int index;
   LR0_Element toLr0_Element() {
-    if (this.type == 'digits') return LR0_Element(type, t: true);
-    if (this.type == 'id') return LR0_Element(type, t: true);
+    if (this.type == 'digits')
+      return LR0_Element(type, t: true, extra: {'digits': this.val});
+    // 之所以用ID表示 ， 是因为LR0里归约全是按照ID符号来规约的
+    // 所以int a;
+    //a 这个信息会丢失掉，但是我们要保存起来
+    if (this.type == 'id')
+      return LR0_Element(type, t: true, extra: {'lexeme': this.val});
     return LR0_Element(val, t: true);
   }
 
@@ -137,6 +149,9 @@ class Action {
   Action(this.state, {this.action = -1});
   int action;
   int state;
+
+//归约对应的产生式
+  get rGrammar => grammar[state];
   @override
   String toString() {
     String prefix;
@@ -152,10 +167,20 @@ class Action {
         prefix = 'r';
         break;
       case 2:
-        prefix = 'goto';
+        prefix = 'g';
         break;
     }
-    return '$prefix$state';
+    return '$prefix$state'.width(3);
+  }
+}
+
+typedef CallBack = void Function(dynamic event);
+
+class Message {
+  Message(this.cbk);
+  CallBack cbk;
+  void add(dynamic event) {
+    cbk?.call(event);
   }
 }
 
@@ -182,6 +207,7 @@ List<LR0> grammar = [
     LR0_Element('(', t: true),
     LR0_Element('C'),
     LR0_Element(')', t: true),
+    // 测试M回填
     LR0_Element('S')
   ]),
   LR0(left: LR0_Element('S'), right: [
@@ -189,8 +215,10 @@ List<LR0> grammar = [
     LR0_Element('(', t: true),
     LR0_Element('C'),
     LR0_Element(')', t: true),
+    // 测试M回填
     LR0_Element('S'),
     LR0_Element('else', t: true),
+
     LR0_Element('S')
   ]),
   LR0(left: LR0_Element('S'), right: [
@@ -254,6 +282,7 @@ HashMap<int, List<Map<LR0_Element, int>>> move = HashMap();
 // 状态机转最终分析表，包括action表和goto表
 // int -> 状态
 // list 下表 和 readable 绑定， 表示读入的对应字符
+// table 里的 goto i, si 对应于 项集序号， rj 对应于 grammar 序号
 List<List<Action>> table = [];
 
 //收集slr分析表格能读入的action表和goto表
@@ -268,13 +297,21 @@ int get currentState => stateStack[stateStack.length - 1];
 //当前分析栈
 List<int> stateStack = [0];
 
+// 字符栈 characterStack
+// 分析栈里对应的字符是什么，可以是终结符，非终结符，和上面的同步变化
 // 记录分析栈字符
-List<LR0_Element> characterStack = [];
+// 它们的综合、继承属性也要相应地保存起来
+List<LR0_Element> cStk = [LR0_Element('\$', t: true)];
+
+// 临时记录已经弹栈的元素，用于属性传递
+// 因为弹出之后再也找不到了
+// 保存的顺序和实际顺序相同
+List<LR0_Element> pops = [];
 
 Future<List<String>> mainFun(
     {
     // 用来发送信息给其他模块、函数调用
-    StreamController streamController}) async {
+    Message streamController}) async {
   await io.Process.run('test1.exe', []);
   String fs = await io.File('out_file.txt').readAsString();
 
@@ -516,27 +553,30 @@ Future<List<String>> mainFun(
   }
 
   // print(Token('divider', '\$').columnIndexInTable);
-  // 终止状态，手工录入，初始状态的状态集合遇到终结符
-  table[5][Token('divider', '\$').columnIndexInTable]..action = 5;
+  // 终止状态，手工录入，初始状态的状态集合遇到终结符 就会acc
+  // table[5][Token('divider', '\$').columnIndexInTable].action = 5;
+  for (var i = 0; i < lr0_states.length; i++) {
+    List<LR0> state = lr0_states[i];
+    for (var item in state) {
+      if (item.left.s == 'P' && item.isEnd) {
+        table[i][Token('divider', '\$').columnIndexInTable].action = 5;
+      }
+    }
+  }
 
   var token_index = 0;
-  print(1);
+
+  printInfo(streamController: streamController);
+
   while (token_index < tokens.length) {
     var token = tokens[token_index];
     var todo = table[currentState][token.columnIndexInTable];
-    print({
-      'stack': stateStack,
-      'act': todo.toString(),
-      'left': tokens.sublist(token_index).map((e) => e.val)
-    });
-    streamController?.add({
-      'type': 'stack',
-      'data': {
-        'stack': stateStack,
-        'act': todo.toString(),
-        'left': tokens.sublist(token_index)
-      }
-    });
+    // print({
+    //   'stack': stateStack,
+    //   'act': todo.toString(),
+    //   'left': tokens.sublist(token_index).map((e) => e.val)
+    // });
+
     if (todo.action == 5) {
       print('acc');
       break;
@@ -547,19 +587,25 @@ Future<List<String>> mainFun(
     }
     if (todo.action == 0) {
       stateStack.add(todo.state);
+      cStk.add(token.toLr0_Element());
       // characterStack.add(readable[token.columnIndexInTable]);
       // 只有压栈才能光标右移
       token_index++;
     }
     if (todo.action == 1) {
       var lr0 = grammar[todo.state];
+      pops.clear();
       for (var i = 0; i < lr0.right.length; i++) {
         stateStack.removeLast();
+
+        pops.insert(0, cStk.removeLast());
       }
       var toAdd = lr0.left;
+
       var goto = table[currentState][readable.searchPosition(toAdd)];
       if (goto.action != -1) {
         stateStack.add(goto.state);
+        cStk.add(toAdd.copy);
       } else {
         //可能需要错误处理
       }
@@ -569,20 +615,68 @@ Future<List<String>> mainFun(
     //action 2 不会是由读token产生的
 
     // print('${token.toLr0_Element()} ${lr0_states[currentState]}');
-
+    // 通过事件回调，分离实验2和实验3的逻辑
+    streamController?.add({
+      'type': 'stack',
+      'data': {
+        'stack': stateStack,
+        'chars': cStk,
+        'act': todo,
+        'left': tokens.sublist(token_index).map((e) => e.val)
+      }
+    });
+    print({
+      'stack': stateStack,
+      'chars': cStk,
+      'act': todo,
+      'left': tokens.sublist(token_index).map((e) => e.val)
+    });
   }
-
-  printInfo(streamController: streamController);
 
   print(stateStack);
   return [];
 }
 
-void main() async {
-  await mainFun();
+main3Fun() async {
+  grammar = grammar3;
+  Message controller = Message((event) {
+    if (event['type'] == 'stack') {
+      var data = event['data'];
+      // print('get');
+      // print(event['data']);
+      Action act = data['act'];
+
+      if (act.action == 1) {
+        var g = grammar[act.state];
+        print(g);
+        print(g.sdtAction);
+        g.sdtAction?.call();
+      }
+      // print(data);
+      // if (act.action == 1) {
+      //   //归约动作
+      //   // print(act.state);
+      //   print(act.rGrammar);
+      // }
+    }
+  });
+
+  await mainFun(streamController: controller);
+
+  print(varTable);
+
+  (cStk.top(1).extra['code'] as List).forEach((element) {
+    print('${element["instr"]}:${element["s"]}');
+  });
 }
 
-void printInfo({StreamController streamController}) {
+void main() async {
+  await mainFun();
+  // main3Fun();
+}
+
+// 也可以直接通过全局变量访问
+void printInfo({Message streamController}) {
   var index = 0;
   print('grammar');
   grammar.forEach((element) {
@@ -593,7 +687,7 @@ void printInfo({StreamController streamController}) {
   print('states');
   index = 0;
   lr0_states.forEach((element) {
-    print('$index :　$element');
+    print('$index'.width(3) + ' :　$element');
     index++;
   });
   print('first');
@@ -609,7 +703,7 @@ void printInfo({StreamController streamController}) {
   print('table');
   index = 0;
   table.forEach((element) {
-    print('$index : $element');
+    print('$index'.width(3) + ' : $element');
     index++;
   });
   print('tokens');

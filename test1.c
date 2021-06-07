@@ -236,18 +236,6 @@ int main() {
                                 break;
                         }
                         break;
-                        // x_num = 0;
-                        // while (w_forward <= w_next) {
-                        //     word_token[x_num] = sentance_input[w_forward];
-                        //     w_forward++;
-                        //     x_num++;
-                        // }
-                        // word_token[w_forward] = '\0';
-                        // print_delegate("token is [ op ,%s]\n", word_token);
-                        // w_state = 0;
-                        // //w_next= w_next+1;
-                        // w_next = w_forward;
-                        // break;
                     case 6:
                         w_next++;
                         next_c = sentance_input[w_next];
